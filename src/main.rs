@@ -57,10 +57,14 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
-use tower_sessions::{MemoryStore, SessionManagerLayer};
+use axum::http::{header, HeaderValue, Method};
+use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_sessions::{cookie::SameSite, MemoryStore, SessionManagerLayer};
 
 mod auth;
+mod ids;
 mod models;
+mod rate_limit;
 mod routes;
 mod state;
 use state::AppState;
@@ -135,13 +139,33 @@ async fn main() {
     // HTTPS. Unset locally, so it still works over plain http://localhost.
     let cookie_secure = std::env::var("COOKIE_SECURE").is_ok_and(|v| v == "true");
     let session_layer =
-        SessionManagerLayer::new(MemoryStore::default()).with_secure(cookie_secure);
+        SessionManagerLayer::new(MemoryStore::default())
+            .with_secure(cookie_secure)
+            .with_same_site(SameSite::Lax); // what API.md asks for; HttpOnly is on by default
+
+    // CORS: which websites' JavaScript may call this API *with cookies*.
+    // Must be exact origins (never "*" when credentials are allowed).
+    // FRONTEND_ORIGINS is comma-separated; defaults to the Vite dev server.
+    let origins: Vec<HeaderValue> = std::env::var("FRONTEND_ORIGINS")
+        .unwrap_or_else(|_| "http://localhost:5173,http://127.0.0.1:5173".to_string())
+        .split(',')
+        .map(|o| o.trim().parse().expect("invalid origin in FRONTEND_ORIGINS"))
+        .collect();
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_credentials(true)
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
+        .allow_headers([header::CONTENT_TYPE]);
 
     let app = Router::new()
         .merge(routes::router(state))
         .route("/greet/{name}", axum::routing::get(greet)) // axum 0.8 syntax
         .route("/echo", post(echo))
-        .layer(session_layer);
+        .layer(session_layer)
+        // Added last = outermost: answers browser preflight (OPTIONS)
+        // requests before anything else runs, and adds CORS headers to
+        // every response, including 401s and 429s.
+        .layer(cors);
 
     // Hosts like Render/Railway choose the port and pass it in via PORT.
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
@@ -151,5 +175,12 @@ async fn main() {
         .unwrap_or_else(|e| panic!("failed to bind to {addr}: {e}"));
 
     println!("listening on http://{addr}");
-    axum::serve(listener, app).await.expect("server error");
+    // with_connect_info exposes the caller's socket address, which the
+    // rate limiter uses to tell clients apart.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .expect("server error");
 }

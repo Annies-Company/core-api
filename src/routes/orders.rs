@@ -5,7 +5,6 @@ use axum::{
     routing::post,
     Json, Router,
 };
-use rand::RngExt;
 use rust_decimal::Decimal;
 
 use crate::models::order::{
@@ -50,19 +49,6 @@ impl IntoResponse for OrderError {
         };
         (status, Json(serde_json::json!({ "error": message }))).into_response()
     }
-}
-
-// --- Order id: AC-XXXXXXXX ---
-fn generate_order_id() -> String {
-    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let mut rng = rand::rng();
-    let suffix: String = (0..8)
-        .map(|_| {
-            let idx = rng.random_range(0..CHARSET.len());
-            CHARSET[idx] as char
-        })
-        .collect();
-    format!("AC-{suffix}")
 }
 
 async fn create_order(
@@ -111,7 +97,7 @@ async fn create_order(
         });
     }
 
-    let id = generate_order_id();
+    let id = crate::ids::short_id("AC");
 
     let order_row = sqlx::query!(
         r#"INSERT INTO orders (id, total) VALUES ($1, $2) RETURNING status, created_at"#,
