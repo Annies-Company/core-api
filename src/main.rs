@@ -131,9 +131,11 @@ async fn main() {
 
     // Sessions live in memory for now: everyone is logged out on restart.
     // The cookie only holds a random session id; the data stays server-side.
-    // with_secure(false) lets the cookie work over plain http://localhost —
-    // set it to true in production (HTTPS).
-    let session_layer = SessionManagerLayer::new(MemoryStore::default()).with_secure(false);
+    // COOKIE_SECURE=true in production: the cookie is then only sent over
+    // HTTPS. Unset locally, so it still works over plain http://localhost.
+    let cookie_secure = std::env::var("COOKIE_SECURE").is_ok_and(|v| v == "true");
+    let session_layer =
+        SessionManagerLayer::new(MemoryStore::default()).with_secure(cookie_secure);
 
     let app = Router::new()
         .merge(routes::router(state))
@@ -141,10 +143,13 @@ async fn main() {
         .route("/echo", post(echo))
         .layer(session_layer);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
+    // Hosts like Render/Railway choose the port and pass it in via PORT.
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let addr = format!("0.0.0.0:{port}");
+    let listener = tokio::net::TcpListener::bind(&addr)
         .await
-        .expect("failed to bind to port 8080");
+        .unwrap_or_else(|e| panic!("failed to bind to {addr}: {e}"));
 
-    println!("listening on http://0.0.0.0:8080");
+    println!("listening on http://{addr}");
     axum::serve(listener, app).await.expect("server error");
 }
