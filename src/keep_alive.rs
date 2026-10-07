@@ -19,10 +19,13 @@ const EVERY: Duration = Duration::from_secs(10 * 60);
 const DB_EVERY_N: u32 = 6;
 
 pub fn spawn(pool: PgPool) {
-    let Ok(base) = std::env::var("RENDER_EXTERNAL_URL") else {
+    // KEEP_ALIVE_URL overrides the address Render gives us, if ever needed.
+    let Ok(base) = std::env::var("KEEP_ALIVE_URL").or_else(|_| std::env::var("RENDER_EXTERNAL_URL")) else {
+        println!("keep-alive: off (RENDER_EXTERNAL_URL not set)");
         return;
     };
     if std::env::var("KEEP_ALIVE").is_ok_and(|v| v == "false") {
+        println!("keep-alive: off (KEEP_ALIVE=false)");
         return;
     }
     let url = format!("{}/health", base.trim_end_matches('/'));
@@ -41,7 +44,7 @@ pub fn spawn(pool: PgPool) {
             n = n.wrapping_add(1);
 
             match client.get(&url).send().await {
-                Ok(res) if res.status().is_success() => {}
+                Ok(res) if res.status().is_success() => println!("keep-alive: ping ok"),
                 Ok(res) => eprintln!("keep-alive: /health answered {}", res.status()),
                 Err(e) => eprintln!("keep-alive: ping failed: {e}"),
             }
