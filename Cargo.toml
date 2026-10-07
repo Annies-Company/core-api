@@ -12,6 +12,7 @@ dotenvy = "0.15.7"
 governor = { version = "0.10", default-features = false }
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 rand = "0.10.3"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 rpassword = "7.5.4"
 rust_decimal = { version = "1.43.0", features = ["serde-with-float"] }
 serde = { version = "1.0.229", features = ["derive"] }

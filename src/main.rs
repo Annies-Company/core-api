@@ -63,6 +63,7 @@ use tower_sessions::{cookie::SameSite, MemoryStore, SessionManagerLayer};
 
 mod auth;
 mod ids;
+mod keep_alive;
 mod models;
 mod rate_limit;
 mod routes;
@@ -131,6 +132,7 @@ async fn main() {
     if storage.is_none() {
         println!("S3_* env vars not set: image uploads disabled");
     }
+    keep_alive::spawn(pool.clone());
     let state = AppState { pool, storage };
 
     // Sessions live in memory for now: everyone is logged out on restart.
